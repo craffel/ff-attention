@@ -149,36 +149,41 @@ if __name__ == '__main__':
         cost = 0
         # Keep track of best accuracy found
         best_accuracy = 0.
-        for batch_idx in range(MAX_BATCHES):
-            # Generate a batch of data
-            X, y, mask = task_options[task](sequence_length, BATCH_SIZE)
-            cost += train(X.astype(theano.config.floatX),
-                          y.astype(theano.config.floatX))
-            # Quit when a non-finite value is found
-            if any([not np.isfinite(cost),
-                    any([not np.all(np.isfinite(p.get_value()))
-                         for p in all_params])]):
-                logger.info('####### Non-finite values found, aborting')
-                break
-            if not (batch_idx + 1) % TEST_FREQUENCY:
-                # Compute mean accuracy across batches from test set
-                test_accuracy = np.mean([
-                    compute_accuracy(
-                        X_test.astype(theano.config.floatX),
-                        y_test.astype(theano.config.floatX))
-                    for X_test, y_test, mask_test in test_set])
-                logger.info(
-                    "Batches trained: {}, cost: {}, accuracy: {}".format(
-                        batch_idx + 1, cost*BATCH_SIZE/TEST_FREQUENCY,
-                        test_accuracy))
-                # Update best accuracy, if a better one was found
-                if test_accuracy > best_accuracy:
-                    best_accuracy = test_accuracy
-                # Quit if we achieve perfect accuracy
-                if test_accuracy == 1.:
+        try:
+            for batch_idx in range(MAX_BATCHES):
+                # Generate a batch of data
+                X, y, mask = task_options[task](sequence_length, BATCH_SIZE)
+                cost += train(X.astype(theano.config.floatX),
+                            y.astype(theano.config.floatX))
+                # Quit when a non-finite value is found
+                if any([not np.isfinite(cost),
+                        any([not np.all(np.isfinite(p.get_value()))
+                            for p in all_params])]):
+                    logger.info('####### Non-finite values found, aborting')
                     break
-                # Reset training cost accumulator
-                cost = 0
+                if not (batch_idx + 1) % TEST_FREQUENCY:
+                    # Compute mean accuracy across batches from test set
+                    test_accuracy = np.mean([
+                        compute_accuracy(
+                            X_test.astype(theano.config.floatX),
+                            y_test.astype(theano.config.floatX))
+                        for X_test, y_test, mask_test in test_set])
+                    logger.info(
+                        "Batches trained: {}, cost: {}, accuracy: {}".format(
+                            batch_idx + 1, cost*BATCH_SIZE/TEST_FREQUENCY,
+                            test_accuracy))
+                    # Update best accuracy, if a better one was found
+                    if test_accuracy > best_accuracy:
+                        best_accuracy = test_accuracy
+                    # Quit if we achieve perfect accuracy
+                    if test_accuracy == 1.:
+                        break
+                    # Reset training cost accumulator
+                    cost = 0
+        # Gracefully handle Theano errors
+        except (RuntimeError, MemoryError) as e:
+            print "Error: {}".format(e)
+            # Flag this as a failed trial by setting accuracy = -1
             best_accuracy = -1
         writer.writerow([learning_rate, momentum, aggregation_layer,
                          sequence_length, task, best_accuracy])
