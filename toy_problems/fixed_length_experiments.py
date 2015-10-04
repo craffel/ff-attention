@@ -79,6 +79,9 @@ if __name__ == '__main__':
     option_iterator = itertools.product(
         task_options, sequence_length_options, aggregation_layer_options,
         momentum_options, learning_rate_options)
+    # Keep track of the smallest number of batches for a given sequence length/
+    # aggregation layer/task
+    best_batches_per_task = collections.defaultdict(lambda: np.inf)
     # Iterate over hypermarameter settings
     for (task, sequence_length, aggregation_layer, momentum,
          learning_rate) in option_iterator:
@@ -178,6 +181,11 @@ if __name__ == '__main__':
                     # Quit if we achieve perfect accuracy
                     if test_accuracy == 1.:
                         break
+                    # Quit if we have exceeded the smallest number of batches
+                    # for this particular task/aggregation layer/sequence len
+                    if batch_idx > best_batches_per_task[
+                            (task, sequence_length, aggregation_layer)]:
+                        break
                     # Reset training cost accumulator
                     cost = 0
         # Gracefully handle Theano errors
@@ -185,6 +193,12 @@ if __name__ == '__main__':
             print "Error: {}".format(e)
             # Flag this as a failed trial by setting accuracy = -1
             best_accuracy = -1
+        # If the number of batches used is smaller than the best so far...
+        if batch_idx < best_batches_per_task[
+                (task, sequence_length, aggregation_layer)]:
+            best_batches_per_task[
+                (task, sequence_length, aggregation_layer)] = batch_idx
+        # Write out this result to the CSV
         writer.writerow([learning_rate, momentum, aggregation_layer,
                          sequence_length, task, best_accuracy, batch_idx])
     results_csv.close()
