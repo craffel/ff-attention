@@ -186,5 +186,5 @@ if __name__ == '__main__':
             # Flag this as a failed trial by setting accuracy = -1
             best_accuracy = -1
         writer.writerow([learning_rate, momentum, aggregation_layer,
-                         sequence_length, task, best_accuracy])
+                         sequence_length, task, best_accuracy, batch_idx])
     results_csv.close()
