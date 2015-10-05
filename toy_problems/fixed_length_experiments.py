@@ -30,10 +30,7 @@ class MeanLayer(lasagne.layers.Layer):
     incoming : a :class:`Layer` instance or a tuple
         The layer feeding into this layer, or the expected input shape
     '''
-    def __init__(self, incoming, W=lasagne.init.Normal(),
-                 b=lasagne.init.Constant(0.),
-                 nonlinearity=lasagne.nonlinearities.tanh,
-                 **kwargs):
+    def __init__(self, incoming, **kwargs):
         super(MeanLayer, self).__init__(incoming, **kwargs)
 
     def get_output_shape_for(self, input_shape):
@@ -111,12 +108,20 @@ if __name__ == '__main__':
             layer, HIDDEN_SIZE, W=lasagne.init.HeNormal(), name='Input dense')
         layer = lasagne.layers.ReshapeLayer(
             layer, (n_batch, n_seq, HIDDEN_SIZE), name='Reshape 2')
-        # Add the attention layer to aggregate over time steps
-        # We must force He initialization because Lasagne doesn't like 1-dim
-        # shapes in He and Glorot initializers
-        layer = aggregation_layer_options[aggregation_layer](
-            layer, W=lasagne.init.Normal(1./np.sqrt(layer.output_shape[-1])),
-            name='Attention')
+        # Add the layer to aggregate over time steps
+        if aggregation_layer == 'attention':
+            # We must force He initialization because Lasagne doesn't like
+            # 1-dim shapes in He and Glorot initializers
+            layer = aggregation_layer_options[aggregation_layer](
+                layer,
+                W=lasagne.init.Normal(1./np.sqrt(layer.output_shape[-1])),
+                name='Attention')
+        elif aggregation_layer == 'mean':
+            layer = aggregation_layer_options[aggregation_layer](
+                layer, name='Attention')
+        else:
+            raise ValueError("Unknown aggregation layer type '{}'.".format(
+                aggregation_layer))
         # Add dense hidden layer
         layer = lasagne.layers.DenseLayer(
             layer, HIDDEN_SIZE, W=lasagne.init.HeNormal(), name='Out dense 1')
