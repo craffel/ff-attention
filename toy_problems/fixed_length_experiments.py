@@ -70,8 +70,8 @@ if __name__ == '__main__':
     aggregation_layer_options = collections.OrderedDict([
         ('attention', layers.AttentionLayer),
         ('mean', MeanLayer)])
-    momentum_options = [.9, .99]
-    learning_rate_options = [.005, .01, .05, .1]
+    momentum_options = [.99, .9]
+    learning_rate_options = [.1, .05, .01, .005]
     # Create iterator over every possible hyperparameter combination
     option_iterator = itertools.product(
         task_options, sequence_length_options, aggregation_layer_options,
