@@ -15,9 +15,13 @@ import itertools
 BATCH_SIZE = 100
 MAX_BATCHES = 100000
 TEST_FREQUENCY = 1000
-TEST_SIZE = 10
+TEST_BATCH_SIZE = 10
+TEST_N_BATCHES = 100
 HIDDEN_SIZE = 100
 RESULTS_PATH = 'results'
+MIN_SEQUENCE_LENGTH = 50
+MAX_SEQUENCE_LENGTH_ADD = 10000
+MAX_SEQUENCE_LENGTH_MULTIPLY = 1000
 
 
 if __name__ == '__main__':
@@ -28,7 +32,7 @@ if __name__ == '__main__':
     # Create logger for results
     logger = logging.getLogger('')
     logger.setLevel(logging.DEBUG)
-    fh = logging.FileHandler(os.path.join(RESULTS_PATH, 'fixed_length.log'))
+    fh = logging.FileHandler(os.path.join(RESULTS_PATH, 'variable_length.log'))
     fh.setLevel(logging.DEBUG)
     ch = logging.StreamHandler()
     ch.setLevel(logging.DEBUG)
@@ -39,40 +43,43 @@ if __name__ == '__main__':
     logger.addHandler(fh)
 
     # Create CSV writer for results
-    results_csv = open(os.path.join(RESULTS_PATH, 'fixed_length.csv'), 'wb')
+    results_csv = open(os.path.join(RESULTS_PATH, 'variable_length.csv'), 'wb')
     writer = csv.writer(results_csv)
 
     # Define experiment space
     task_options = collections.OrderedDict([
         ('add', lstm_problems.add),
         ('multiply', lstm_problems.multiply)])
-    sequence_length_options = [50, 100, 500, 1000, 5000]
     aggregation_layer_options = collections.OrderedDict([
         ('attention', layers.AttentionLayer),
         ('mean', layers.MeanLayer)])
-    momentum_options = [.99, .9]
-    learning_rate_options = [.1, .05, .01, .005]
+    momentum_options = [.9, .99]
+    learning_rate_options = [.005, .01, .05, .1]
     # Create iterator over every possible hyperparameter combination
     option_iterator = itertools.product(
-        task_options, sequence_length_options, aggregation_layer_options,
-        momentum_options, learning_rate_options)
-    # Keep track of the smallest number of batches for a given sequence length/
-    # aggregation layer/task
+        task_options, aggregation_layer_options, momentum_options,
+        learning_rate_options)
+    # Keep track of the smallest number of batches for a given task
     best_batches_per_task = collections.defaultdict(lambda: np.inf)
     # Iterate over hypermarameter settings
-    for (task, sequence_length, aggregation_layer, momentum,
-         learning_rate) in option_iterator:
+    for (task, aggregation_layer, momentum, learning_rate) in option_iterator:
         logger.info(
-            '####### Learning rate: {}, momentum: {}, sequence length: {}, '
-            'aggregation: {}, task: {}'.format(
-                learning_rate, momentum, sequence_length,
-                aggregation_layer, task))
+            '####### Learning rate: {}, momentum: {}, aggregation: {}, '
+            'task: {}'.format(
+                learning_rate, momentum, aggregation_layer, task))
+        # Determine max sequence length according to task
+        if task == 'add':
+            max_sequence_length = MAX_SEQUENCE_LENGTH_ADD
+        if task == 'multiply':
+            max_sequence_length = MAX_SEQUENCE_LENGTH_MULTIPLY
         # Create test set of pre-sampled batches
-        test_set = [task_options[task](sequence_length, BATCH_SIZE)
-                    for _ in range(TEST_SIZE)]
+        test_set = [task_options[task](int(n), TEST_BATCH_SIZE, int(n))
+                    for n in np.linspace(MIN_SEQUENCE_LENGTH,
+                                         max_sequence_length,
+                                         TEST_N_BATCHES)]
         # Get a dummy batch to use for statistics
         dummy_batch, dummy_targets, dummy_mask = task_options[task](
-            sequence_length, 1000)
+            MIN_SEQUENCE_LENGTH, 1000, max_sequence_length)
         # Get the input shape from the dummy batch
         input_shape = (None, dummy_batch.shape[1], dummy_batch.shape[2])
         # Construct network
@@ -139,10 +146,14 @@ if __name__ == '__main__':
         best_accuracy = 0.
         try:
             for batch_idx in range(MAX_BATCHES):
+                # Choose a random sequence length
+                sequence_length = np.random.random_integers(
+                    MIN_SEQUENCE_LENGTH, max_sequence_length)
                 # Generate a batch of data
-                X, y, mask = task_options[task](sequence_length, BATCH_SIZE)
+                X, y, m = task_options[task](
+                    sequence_length, BATCH_SIZE, sequence_length)
                 cost += train(X.astype(theano.config.floatX),
-                            y.astype(theano.config.floatX))
+                              y.astype(theano.config.floatX))
                 # Quit when a non-finite value is found
                 if any([not np.isfinite(cost),
                         any([not np.all(np.isfinite(p.get_value()))
@@ -169,7 +180,7 @@ if __name__ == '__main__':
                     # Quit if we have exceeded the smallest number of batches
                     # for this particular task/aggregation layer/sequence len
                     if batch_idx > best_batches_per_task[
-                            (task, sequence_length, aggregation_layer)]:
+                            (task, aggregation_layer)]:
                         break
                     # Reset training cost accumulator
                     cost = 0
@@ -179,11 +190,9 @@ if __name__ == '__main__':
             # Flag this as a failed trial by setting accuracy = -1
             best_accuracy = -1
         # If the number of batches used is smaller than the best so far...
-        if batch_idx < best_batches_per_task[
-                (task, sequence_length, aggregation_layer)]:
-            best_batches_per_task[
-                (task, sequence_length, aggregation_layer)] = batch_idx
+        if batch_idx < best_batches_per_task[(task, aggregation_layer)]:
+            best_batches_per_task[(task, aggregation_layer)] = batch_idx
         # Write out this result to the CSV
         writer.writerow([learning_rate, momentum, aggregation_layer,
-                         sequence_length, task, best_accuracy, batch_idx])
+                         task, best_accuracy, batch_idx])
     results_csv.close()

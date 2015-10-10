@@ -66,3 +66,24 @@ class AttentionLayer(lasagne.layers.Layer):
         weighted_input = input*activation.dimshuffle(0, 1, 'x')
         # Compute weighted average (summing because softmax is normed)
         return weighted_input.sum(axis=1)
+
+
+class MeanLayer(lasagne.layers.Layer):
+    '''
+    A layer which computes an average across the second dimension of
+    its input. This results in the second dimension being flattened.
+
+    Parameters
+    ----------
+    incoming : a :class:`Layer` instance or a tuple
+        The layer feeding into this layer, or the expected input shape
+    '''
+    def __init__(self, incoming, **kwargs):
+        super(MeanLayer, self).__init__(incoming, **kwargs)
+
+    def get_output_shape_for(self, input_shape):
+        return (input_shape[0], input_shape[-1])
+
+    def get_output_for(self, input, **kwargs):
+        # Compute average of second axis
+        return input.mean(axis=1)
