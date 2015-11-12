@@ -168,7 +168,7 @@ if __name__ == '__main__':
                         break
                     # Quit if we have exceeded the smallest number of batches
                     # for this particular task/aggregation layer/sequence len
-                    if batch_idx > best_batches_per_task[
+                    if batch_idx >= best_batches_per_task[
                             (task, sequence_length, aggregation_layer)]:
                         break
                     # Reset training cost accumulator
