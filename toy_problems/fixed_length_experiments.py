@@ -46,26 +46,25 @@ if __name__ == '__main__':
     task_options = collections.OrderedDict([
         ('add', lstm_problems.add),
         ('multiply', lstm_problems.multiply)])
-    sequence_length_options = [50, 100, 500, 1000, 5000]
+    sequence_length_options = [50, 100, 500, 1000, 5000, 10000]
     aggregation_layer_options = collections.OrderedDict([
         ('attention', layers.AttentionLayer),
         ('mean', layers.MeanLayer)])
-    momentum_options = [.99, .9]
-    learning_rate_options = [.1, .05, .01, .005]
+    learning_rate_options = [.01, .003, .001, .0003]
     # Create iterator over every possible hyperparameter combination
     option_iterator = itertools.product(
         task_options, sequence_length_options, aggregation_layer_options,
-        momentum_options, learning_rate_options)
+        learning_rate_options)
     # Keep track of the smallest number of batches for a given sequence length/
     # aggregation layer/task
     best_batches_per_task = collections.defaultdict(lambda: np.inf)
     # Iterate over hypermarameter settings
-    for (task, sequence_length, aggregation_layer, momentum,
+    for (task, sequence_length, aggregation_layer,
          learning_rate) in option_iterator:
         logger.info(
-            '####### Learning rate: {}, momentum: {}, sequence length: {}, '
+            '####### Learning rate: {}, sequence length: {}, '
             'aggregation: {}, task: {}'.format(
-                learning_rate, momentum, sequence_length,
+                learning_rate, sequence_length,
                 aggregation_layer, task))
         # Create test set of pre-sampled batches
         test_set = [task_options[task](sequence_length, BATCH_SIZE)
@@ -85,7 +84,8 @@ if __name__ == '__main__':
         layer = lasagne.layers.ReshapeLayer(
             layer, (n_batch*n_seq, input_shape[-1]), name='Reshape 1')
         layer = lasagne.layers.DenseLayer(
-            layer, HIDDEN_SIZE, W=lasagne.init.HeNormal(), name='Input dense')
+            layer, HIDDEN_SIZE, W=lasagne.init.HeNormal(), name='Input dense',
+            nonlinearity=lasagne.nonlinearities.leaky_rectify)
         layer = lasagne.layers.ReshapeLayer(
             layer, (n_batch, n_seq, HIDDEN_SIZE), name='Reshape 2')
         # Add the layer to aggregate over time steps
@@ -104,10 +104,12 @@ if __name__ == '__main__':
                 aggregation_layer))
         # Add dense hidden layer
         layer = lasagne.layers.DenseLayer(
-            layer, HIDDEN_SIZE, W=lasagne.init.HeNormal(), name='Out dense 1')
+            layer, HIDDEN_SIZE, W=lasagne.init.HeNormal(), name='Out dense 1',
+            nonlinearity=lasagne.nonlinearities.leaky_rectify)
         # Add final dense layer, whose bias is initialized to the target mean
         layer = lasagne.layers.DenseLayer(
-            layer, 1, W=lasagne.init.HeNormal(), name='Out dense 2')
+            layer, 1, W=lasagne.init.HeNormal(), name='Out dense 2',
+            nonlinearity=lasagne.nonlinearities.leaky_rectify)
         layer = lasagne.layers.ReshapeLayer(
             layer, (-1,))
         # Keep track of the final layer
@@ -121,8 +123,7 @@ if __name__ == '__main__':
         # Retrieve all network parameters
         all_params = lasagne.layers.get_all_params(layers['out'])
         # Compute updates
-        updates = lasagne.updates.nesterov_momentum(
-            cost, all_params, learning_rate, momentum)
+        updates = lasagne.updates.adam(cost, all_params, learning_rate)
         # Compile training function
         train = theano.function([layers['in'].input_var, target],
                                 cost, updates=updates)
@@ -184,6 +185,6 @@ if __name__ == '__main__':
             best_batches_per_task[
                 (task, sequence_length, aggregation_layer)] = batch_idx
         # Write out this result to the CSV
-        writer.writerow([learning_rate, momentum, aggregation_layer,
+        writer.writerow([learning_rate, aggregation_layer,
                          sequence_length, task, best_accuracy, batch_idx])
     results_csv.close()

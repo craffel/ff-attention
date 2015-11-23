@@ -20,8 +20,7 @@ TEST_N_BATCHES = 100
 HIDDEN_SIZE = 100
 RESULTS_PATH = 'results'
 MIN_SEQUENCE_LENGTH = 50
-MAX_SEQUENCE_LENGTH_ADD = 10000
-MAX_SEQUENCE_LENGTH_MULTIPLY = 1000
+MAX_SEQUENCE_LENGTH = 10000
 
 
 if __name__ == '__main__':
@@ -53,33 +52,26 @@ if __name__ == '__main__':
     aggregation_layer_options = collections.OrderedDict([
         ('attention', layers.AttentionLayer),
         ('mean', layers.MeanLayer)])
-    momentum_options = [.9, .99]
-    learning_rate_options = [.005, .01, .05, .1]
+    learning_rate_options = [.01, .003, .001, .0003]
     # Create iterator over every possible hyperparameter combination
     option_iterator = itertools.product(
-        task_options, aggregation_layer_options, momentum_options,
-        learning_rate_options)
+        task_options, aggregation_layer_options, learning_rate_options)
     # Keep track of the smallest number of batches for a given task
     best_batches_per_task = collections.defaultdict(lambda: np.inf)
     # Iterate over hypermarameter settings
-    for (task, aggregation_layer, momentum, learning_rate) in option_iterator:
+    for (task, aggregation_layer, learning_rate) in option_iterator:
         logger.info(
-            '####### Learning rate: {}, momentum: {}, aggregation: {}, '
+            '####### Learning rate: {}, aggregation: {}, '
             'task: {}'.format(
-                learning_rate, momentum, aggregation_layer, task))
-        # Determine max sequence length according to task
-        if task == 'add':
-            max_sequence_length = MAX_SEQUENCE_LENGTH_ADD
-        if task == 'multiply':
-            max_sequence_length = MAX_SEQUENCE_LENGTH_MULTIPLY
+                learning_rate, aggregation_layer, task))
         # Create test set of pre-sampled batches
         test_set = [task_options[task](int(n), TEST_BATCH_SIZE, int(n))
                     for n in np.linspace(MIN_SEQUENCE_LENGTH,
-                                         max_sequence_length,
+                                         MAX_SEQUENCE_LENGTH,
                                          TEST_N_BATCHES)]
         # Get a dummy batch to use for statistics
         dummy_batch, dummy_targets, dummy_mask = task_options[task](
-            MIN_SEQUENCE_LENGTH, 1000, max_sequence_length)
+            MIN_SEQUENCE_LENGTH, 1000, MAX_SEQUENCE_LENGTH)
         # Get the input shape from the dummy batch
         input_shape = (None, dummy_batch.shape[1], dummy_batch.shape[2])
         # Construct network
@@ -92,7 +84,8 @@ if __name__ == '__main__':
         layer = lasagne.layers.ReshapeLayer(
             layer, (n_batch*n_seq, input_shape[-1]), name='Reshape 1')
         layer = lasagne.layers.DenseLayer(
-            layer, HIDDEN_SIZE, W=lasagne.init.HeNormal(), name='Input dense')
+            layer, HIDDEN_SIZE, W=lasagne.init.HeNormal(), name='Input dense',
+            nonlinearity=lasagne.nonlinearities.leaky_rectify)
         layer = lasagne.layers.ReshapeLayer(
             layer, (n_batch, n_seq, HIDDEN_SIZE), name='Reshape 2')
         # Add the layer to aggregate over time steps
@@ -111,10 +104,12 @@ if __name__ == '__main__':
                 aggregation_layer))
         # Add dense hidden layer
         layer = lasagne.layers.DenseLayer(
-            layer, HIDDEN_SIZE, W=lasagne.init.HeNormal(), name='Out dense 1')
+            layer, HIDDEN_SIZE, W=lasagne.init.HeNormal(), name='Out dense 1',
+            nonlinearity=lasagne.nonlinearities.leaky_rectify)
         # Add final dense layer, whose bias is initialized to the target mean
         layer = lasagne.layers.DenseLayer(
-            layer, 1, W=lasagne.init.HeNormal(), name='Out dense 2')
+            layer, 1, W=lasagne.init.HeNormal(), name='Out dense 2',
+            nonlinearity=lasagne.nonlinearities.leaky_rectify)
         layer = lasagne.layers.ReshapeLayer(
             layer, (-1,))
         # Keep track of the final layer
@@ -128,8 +123,7 @@ if __name__ == '__main__':
         # Retrieve all network parameters
         all_params = lasagne.layers.get_all_params(layers['out'])
         # Compute updates
-        updates = lasagne.updates.nesterov_momentum(
-            cost, all_params, learning_rate, momentum)
+        updates = lasagne.updates.adam(cost, all_params, learning_rate)
         # Compile training function
         train = theano.function([layers['in'].input_var, target],
                                 cost, updates=updates)
@@ -148,7 +142,7 @@ if __name__ == '__main__':
             for batch_idx in range(MAX_BATCHES):
                 # Choose a random sequence length
                 sequence_length = np.random.random_integers(
-                    MIN_SEQUENCE_LENGTH, max_sequence_length)
+                    MIN_SEQUENCE_LENGTH, MAX_SEQUENCE_LENGTH)
                 # Generate a batch of data
                 X, y, m = task_options[task](
                     sequence_length, BATCH_SIZE, sequence_length)
@@ -193,6 +187,6 @@ if __name__ == '__main__':
         if batch_idx < best_batches_per_task[(task, aggregation_layer)]:
             best_batches_per_task[(task, aggregation_layer)] = batch_idx
         # Write out this result to the CSV
-        writer.writerow([learning_rate, momentum, aggregation_layer,
+        writer.writerow([learning_rate, aggregation_layer,
                          task, best_accuracy, batch_idx])
     results_csv.close()
